@@ -1,0 +1,3 @@
+## Sample section
+
+This is a small sample text fixture used to round-trip parse_txt().

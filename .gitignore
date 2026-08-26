@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+db/chroma_store/
+db/reference.duckdb
+data/raw/*.txt
+data/processed/*
+!data/processed/README.md
+.pytest_cache/
+*.egg-info/

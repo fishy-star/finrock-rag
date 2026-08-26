@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>finrock-rag</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 780px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 2.5rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; font-weight: 600; }
+    input[type=text], textarea, select { width: 100%; box-sizing: border-box; padding: 0.4rem; margin-top: 0.2rem; font-family: inherit; font-size: 0.95rem; }
+    textarea { min-height: 6rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 0.75rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+    .warning { color: #8a5b00; background: #fff3cd; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; }
+    .chunk { border: 1px solid #ddd; border-radius: 4px; padding: 0.6rem; margin-top: 0.5rem; }
+    .chunk .meta { font-size: 0.8rem; color: #555; margin-bottom: 0.3rem; }
+    #documents li { margin-bottom: 0.3rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>finrock-rag</h1>
+  <p>Standalone RAG service over GOV.UK bookkeeping guidance and original notes.</p>
+
+  <h2>Upload a document</h2>
+  <form id="upload-form">
+    <label>Title
+      <input type="text" name="title" required />
+    </label>
+    <label>Source type
+      <select name="source_type">
+        <option value="govuk">govuk</option>
+        <option value="internal_note">internal_note</option>
+        <option value="other">other</option>
+      </select>
+    </label>
+    <label>File (.txt or .pdf)
+      <input type="file" name="file" accept=".txt,.pdf" />
+    </label>
+    <label>...or paste text directly
+      <textarea name="text" placeholder="Paste an original note here instead of uploading a file"></textarea>
+    </label>
+    <button type="submit">Upload</button>
+  </form>
+  <pre id="upload-result" class="hidden"></pre>
+
+  <h2>Documents</h2>
+  <ul id="documents"></ul>
+
+  <h2>Check retrieval</h2>
+  <p>Runs semantic search only — no LLM call, no API key needed.</p>
+  <form id="check-form">
+    <label>Question
+      <input type="text" name="question" required />
+    </label>
+    <button type="submit">Check retrieval</button>
+  </form>
+  <div id="check-result"></div>
+
+  <h2>Get full answer</h2>
+  <form id="query-form">
+    <label>Question
+      <input type="text" name="question" required />
+    </label>
+    <button type="submit">Get full answer</button>
+  </form>
+  <pre id="query-result" class="hidden"></pre>
+  <p id="query-disabled-note" class="hidden">
+    Full answers are disabled — set ANTHROPIC_API_KEY in .env to enable /rag/query.
+  </p>
+
+  <script>
+    async function loadDocuments() {
+      const res = await fetch('/documents');
+      const docs = await res.json();
+      const list = document.getElementById('documents');
+      list.innerHTML = '';
+      if (docs.length === 0) {
+        list.innerHTML = '<li><em>No documents ingested yet.</em></li>';
+        return;
+      }
+      for (const doc of docs) {
+        const li = document.createElement('li');
+        li.textContent = `${doc.source_title} (${doc.source_type}) — ${doc.chunk_count} chunks`;
+        list.appendChild(li);
+      }
+    }
+
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      if (!form.get('file') || form.get('file').size === 0) form.delete('file');
+      const res = await fetch('/documents/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      const out = document.getElementById('upload-result');
+      out.classList.remove('hidden');
+      out.textContent = JSON.stringify(data, null, 2);
+      if (res.ok) {
+        e.target.reset();
+        loadDocuments();
+      }
+    });
+
+    document.getElementById('check-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const question = new FormData(e.target).get('question');
+      const res = await fetch('/rag/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      const out = document.getElementById('check-result');
+      out.innerHTML = '';
+      if (!data.chunks || data.chunks.length === 0) {
+        out.innerHTML = '<p><em>No chunks matched.</em></p>';
+        return;
+      }
+      for (const chunk of data.chunks) {
+        const div = document.createElement('div');
+        div.className = 'chunk';
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = `distance ${chunk.distance.toFixed(4)} — ${chunk.metadata.source_title} — ${chunk.metadata.section_heading}`;
+        const text = document.createElement('div');
+        text.textContent = chunk.text;
+        div.appendChild(meta);
+        div.appendChild(text);
+        out.appendChild(div);
+      }
+    });
+
+    document.getElementById('query-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const question = new FormData(e.target).get('question');
+      const res = await fetch('/rag/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      const out = document.getElementById('query-result');
+      out.classList.remove('hidden');
+      out.textContent = JSON.stringify(data, null, 2);
+    });
+
+    async function applyHealth() {
+      const res = await fetch('/healthz');
+      const health = await res.json();
+      if (!health.llm_configured) {
+        document.getElementById('query-form').classList.add('hidden');
+        document.getElementById('query-disabled-note').classList.remove('hidden');
+      }
+    }
+
+    loadDocuments();
+    applyHealth();
+  </script>
+</body>
+</html>

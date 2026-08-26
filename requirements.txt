@@ -1,0 +1,13 @@
+sentence-transformers
+chromadb
+duckdb
+fastapi
+python-multipart
+uvicorn[standard]
+requests
+beautifulsoup4
+pypdf
+python-dotenv
+pydantic
+anthropic
+pytest
