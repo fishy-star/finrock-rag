@@ -12,7 +12,6 @@ STRUCTURED_KEYWORDS = ["rate", "%", "threshold", "how much"]
 class Source(str, Enum):
     DUCKDB = "duckdb"
     CHROMA = "chroma"
-    BOTH = "both"
 
 
 def classify_query(question: str) -> Source:

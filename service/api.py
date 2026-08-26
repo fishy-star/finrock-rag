@@ -19,7 +19,9 @@ from service.synthesize import synthesize_answer
 
 app = FastAPI(title="finrock-rag")
 
-# Ensure the DuckDB starter table exists on boot — cheap, idempotent.
+# Ensure the DuckDB starter table exists on boot — load_vat_rates() is
+# idempotent (INSERT ... ON CONFLICT DO NOTHING), so this never wipes
+# hand-edited rows on restart.
 init_schema()
 load_vat_rates()
 
@@ -65,7 +67,10 @@ async def upload_document(
 
     if file is not None:
         content = await file.read()
-        parsed_text = parse_upload(file.filename, content)
+        try:
+            parsed_text = parse_upload(file.filename, content)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     elif text is not None and text.strip():
         parsed_text = text
     else:
@@ -117,10 +122,6 @@ def rag_query(body: QuestionRequest):
     source = classify_query(body.question)
     if source == Source.DUCKDB:
         context_chunks = _duckdb_rows_to_chunks(query_duckdb(body.question))
-    elif source == Source.BOTH:
-        context_chunks = _duckdb_rows_to_chunks(query_duckdb(body.question)) + query_chroma(
-            body.question
-        )
     else:
         context_chunks = query_chroma(body.question)
 

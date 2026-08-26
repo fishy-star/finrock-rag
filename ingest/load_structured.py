@@ -29,10 +29,14 @@ def init_schema():
 
 
 def load_vat_rates():
+    """Idempotent: only inserts rows that don't already exist (by scheme).
+
+    Never deletes — a hand-edited row (or an expanded table, once the
+    mentor confirms what else belongs here) survives a server restart.
+    """
     conn = get_connection()
-    conn.execute("DELETE FROM vat_rates")
     conn.executemany(
-        "INSERT INTO vat_rates VALUES (?, ?, ?)",
+        "INSERT INTO vat_rates VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
         [
             ("standard", 20.0, "Most goods and services"),
             ("reduced", 5.0, "Some goods and services, e.g. children's car seats, home energy"),

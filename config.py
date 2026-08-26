@@ -13,4 +13,4 @@ RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "5"))
 
 # Claude model used for synthesis. See claude-api skill / docs before
 # changing — pin an exact model string, don't guess.
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")

@@ -16,11 +16,19 @@ def query_vat_rate(scheme: str) -> dict | None:
 
 
 def query_duckdb(question: str) -> list[dict]:
-    """v1: return all vat_rates rows regardless of question text.
+    """If the question names a specific scheme (standard/reduced/zero),
+    return just that row via query_vat_rate(). Otherwise return all rows.
 
     TODO: real keyword/NL matching once there's more than one table —
-    not worth building against a single table with three rows.
+    this substring check is only viable because vat_rates.scheme has
+    exactly three known literal values.
     """
+    q = question.lower()
+    for scheme in ("standard", "reduced", "zero"):
+        if scheme in q:
+            row = query_vat_rate(scheme)
+            return [row] if row else []
+
     conn = get_connection()
     rows = conn.execute("SELECT scheme, rate_pct, description FROM vat_rates").fetchall()
     conn.close()
