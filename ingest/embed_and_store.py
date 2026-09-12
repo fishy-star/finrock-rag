@@ -52,7 +52,14 @@ def store_chunks(chunks: list[Chunk], source_type: str) -> int:
         return 0
 
     collection = get_collection()
-    embeddings = embed_texts([c.text for c in chunks])
+    # Embed title + body, not body alone — a chunk's title often carries
+    # the strongest topical signal (e.g. "Cash basis: eligibility"), and
+    # a page can discuss its own subject at length without ever using
+    # the literal word its title names. Store the clean body as the
+    # document text (for display and as LLM context); only the
+    # embedding input includes the title.
+    embed_inputs = [f"{c.source_title}\n\n{c.text}".strip() for c in chunks]
+    embeddings = embed_texts(embed_inputs)
     ingested_at = datetime.now(timezone.utc).isoformat()
 
     # Chroma ids must be unique strings; base them on current collection

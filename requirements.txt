@@ -9,5 +9,4 @@ beautifulsoup4
 pypdf
 python-dotenv
 pydantic
-anthropic
 pytest

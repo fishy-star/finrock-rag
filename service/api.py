@@ -3,18 +3,18 @@
 import uuid
 from collections import defaultdict
 
+import requests
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from config import ANTHROPIC_API_KEY
+from config import GROQ_API_KEY
 from ingest.chunker import chunk_document, chunk_note
 from ingest.embed_and_store import get_collection, store_chunks
 from ingest.parse_document import parse_upload
 from ingest.load_structured import init_schema, load_vat_rates
 from service.query_chroma import query_chroma
 from service.query_duckdb import query_duckdb
-from service.router import Source, classify_query
 from service.synthesize import synthesize_answer
 
 app = FastAPI(title="finrock-rag")
@@ -114,23 +114,31 @@ def rag_check(body: QuestionRequest):
 
 @app.post("/rag/query")
 def rag_query(body: QuestionRequest):
-    if not ANTHROPIC_API_KEY:
+    if not GROQ_API_KEY:
         raise HTTPException(
-            503, "ANTHROPIC_API_KEY is not configured — set it in .env to enable /rag/query"
+            503, "GROQ_API_KEY is not configured — set it in .env to enable /rag/query"
         )
 
-    source = classify_query(body.question)
-    if source == Source.DUCKDB:
-        context_chunks = _duckdb_rows_to_chunks(query_duckdb(body.question))
-    else:
-        context_chunks = query_chroma(body.question)
+    # Always query both stores and merge — no upfront classifier picking
+    # a single source. A keyword-based classify_query() used to route
+    # e.g. "mileage rate" to DuckDB-only (matched on "rate"), so the
+    # semantically-relevant Chroma passage was never in context at all.
+    # Merging removes that whole class of misrouting, not just that one
+    # keyword — the LLM sees both and the system prompt already handles
+    # discarding irrelevant context (NOT_COVERED if nothing answers it).
+    context_chunks = _duckdb_rows_to_chunks(query_duckdb(body.question)) + query_chroma(
+        body.question
+    )
 
-    return synthesize_answer(body.question, context_chunks)
+    try:
+        return synthesize_answer(body.question, context_chunks)
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f"Groq API request failed: {e}")
 
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "llm_configured": bool(ANTHROPIC_API_KEY)}
+    return {"status": "ok", "llm_configured": bool(GROQ_API_KEY)}
 
 
 app.mount("/", StaticFiles(directory="service/static", html=True), name="static")
